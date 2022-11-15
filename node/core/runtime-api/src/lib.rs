@@ -27,7 +27,7 @@ use polkadot_node_subsystem::{
 	messages::{RuntimeApiMessage, RuntimeApiRequest as Request},
 	overseer, FromOrchestra, OverseerSignal, SpawnedSubsystem, SubsystemError, SubsystemResult,
 };
-use polkadot_node_subsystem_types::RuntimeApiSubsystemClient;
+use polkadot_node_subsystem_types::{ApiError, RuntimeApiSubsystemClient};
 use polkadot_primitives::v2::Hash;
 
 use cache::{RequestResult, RequestResultCache};
@@ -356,11 +356,19 @@ where
 			let version: u32 = $version;	// enforce type for the version expression
 			let runtime_version = client.api_version_parachain_host(relay_parent).await
 				.unwrap_or_else(|e| {
-					gum::warn!(
-						target: LOG_TARGET,
-						"cannot query the runtime API version: {}",
-						e,
-					);
+					if let ApiError::UnknownBlock(s) = e {
+						gum::warn!(
+							target: LOG_TARGET,
+							"cannot query the runtime API version. UnknownBlock error: {}",
+							s,
+						);
+					} else {
+						gum::warn!(
+							target: LOG_TARGET,
+							"cannot query the runtime API version: {}",
+							e,
+						);
+					}
 					Some(0)
 				})
 				.unwrap_or_else(|| {

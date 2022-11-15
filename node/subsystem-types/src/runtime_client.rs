@@ -25,11 +25,12 @@ use polkadot_primitives::{
 		ValidationCode, ValidationCodeHash, ValidatorId, ValidatorIndex, ValidatorSignature,
 	},
 };
-use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
+use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_authority_discovery::AuthorityDiscoveryApi;
 use sp_consensus_babe::{BabeApi, Epoch};
 use std::collections::BTreeMap;
 
+pub use sp_api::ApiError;
 /// Exposes all runtime calls that are used by the runtime API subsystem.
 #[async_trait]
 pub trait RuntimeApiSubsystemClient {
