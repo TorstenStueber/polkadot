@@ -1221,7 +1221,6 @@ pub type Migrations = (
 	crowdloan::migration::MigrateToTrackInactiveV2<Runtime>,
 	pallet_scheduler::migration::v4::CleanupAgendas<Runtime>,
 	pallet_staking::migrations::v13::MigrateToV13<Runtime>,
-	parachains_disputes::migration::v1::MigrateToV1<Runtime>,
 	parachains_configuration::migration::v4::MigrateToV4<Runtime>,
 );
 
