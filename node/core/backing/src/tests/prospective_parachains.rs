@@ -20,11 +20,12 @@ use polkadot_node_subsystem::{
 	messages::{ChainApiMessage, FragmentTreeMembership},
 	TimeoutExt,
 };
-use polkadot_primitives::v2::{BlockNumber, Header};
+use polkadot_primitives::{vstaging as vstaging_primitives, BlockNumber, Header, OccupiedCore};
 
 use super::*;
 
-const API_VERSION_PROSPECTIVE_ENABLED: u32 = RuntimeApiRequest::VALIDITY_CONSTRAINTS;
+const ASYNC_BACKING_PARAMETERS: vstaging_primitives::AsyncBackingParameters =
+	vstaging_primitives::AsyncBackingParameters { max_candidate_depth: 4, allowed_ancestry_len: 3 };
 
 struct TestLeaf {
 	activated: ActivatedLeaf,
@@ -55,9 +56,9 @@ async fn activate_leaf(
 	assert_matches!(
 		virtual_overseer.recv().await,
 		AllMessages::RuntimeApi(
-			RuntimeApiMessage::Request(parent, RuntimeApiRequest::Version(tx))
+			RuntimeApiMessage::Request(parent, RuntimeApiRequest::StagingAsyncBackingParameters(tx))
 		) if parent == leaf_hash => {
-			tx.send(Ok(API_VERSION_PROSPECTIVE_ENABLED)).unwrap();
+			tx.send(Ok(ASYNC_BACKING_PARAMETERS)).unwrap();
 		}
 	);
 
@@ -313,7 +314,7 @@ fn seconding_sanity_check_allowed() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate is seconded in a parent of the activated `leaf_a`.
 		const LEAF_A_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_A_DEPTH: BlockNumber = 3;
+		const LEAF_A_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_b_hash = Hash::from_low_u64_be(128);
@@ -326,11 +327,11 @@ fn seconding_sanity_check_allowed() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		const LEAF_B_BLOCK_NUMBER: BlockNumber = LEAF_A_BLOCK_NUMBER + 2;
-		const LEAF_B_DEPTH: BlockNumber = 4;
+		const LEAF_B_ANCESTRY_LEN: BlockNumber = 4;
 
 		let activated = ActivatedLeaf {
 			hash: leaf_b_hash,
@@ -338,7 +339,7 @@ fn seconding_sanity_check_allowed() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_B_BLOCK_NUMBER - LEAF_B_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_B_BLOCK_NUMBER - LEAF_B_ANCESTRY_LEN)];
 		let test_leaf_b = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -468,7 +469,7 @@ fn seconding_sanity_check_disallowed() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate is seconded in a parent of the activated `leaf_a`.
 		const LEAF_A_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_A_DEPTH: BlockNumber = 3;
+		const LEAF_A_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_b_hash = Hash::from_low_u64_be(128);
@@ -481,11 +482,11 @@ fn seconding_sanity_check_disallowed() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		const LEAF_B_BLOCK_NUMBER: BlockNumber = LEAF_A_BLOCK_NUMBER + 2;
-		const LEAF_B_DEPTH: BlockNumber = 4;
+		const LEAF_B_ANCESTRY_LEN: BlockNumber = 4;
 
 		let activated = ActivatedLeaf {
 			hash: leaf_b_hash,
@@ -493,7 +494,7 @@ fn seconding_sanity_check_disallowed() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_B_BLOCK_NUMBER - LEAF_B_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_B_BLOCK_NUMBER - LEAF_B_ANCESTRY_LEN)];
 		let test_leaf_b = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -688,7 +689,7 @@ fn prospective_parachains_reject_candidate() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate is seconded in a parent of the activated `leaf_a`.
 		const LEAF_A_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_A_DEPTH: BlockNumber = 3;
+		const LEAF_A_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_a_hash = Hash::from_low_u64_be(130);
@@ -699,7 +700,7 @@ fn prospective_parachains_reject_candidate() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -870,7 +871,7 @@ fn second_multiple_candidates_per_relay_parent() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate `a` is seconded in a parent of the activated `leaf`.
 		const LEAF_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_DEPTH: BlockNumber = 3;
+		const LEAF_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_hash = Hash::from_low_u64_be(130);
@@ -882,7 +883,7 @@ fn second_multiple_candidates_per_relay_parent() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -1012,7 +1013,7 @@ fn backing_works() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate `a` is seconded in a parent of the activated `leaf`.
 		const LEAF_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_DEPTH: BlockNumber = 3;
+		const LEAF_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_hash = Hash::from_low_u64_be(130);
@@ -1023,7 +1024,7 @@ fn backing_works() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -1049,6 +1050,7 @@ fn backing_works() {
 		.build();
 
 		let candidate_a_hash = candidate_a.hash();
+		let candidate_a_para_head = candidate_a.descriptor().para_head;
 
 		let public1 = CryptoStore::sr25519_generate_new(
 			&*test_state.keystore,
@@ -1133,7 +1135,7 @@ fn backing_works() {
 		)
 		.await;
 
-		// Prospective parachains are notified about candidate backed.
+		// Prospective parachains and collator protocol are notified about candidate backed.
 		assert_matches!(
 			virtual_overseer.recv().await,
 			AllMessages::ProspectiveParachains(
@@ -1142,17 +1144,12 @@ fn backing_works() {
 				),
 			) if candidate_a_hash == candidate_hash && candidate_para_id == para_id
 		);
-
 		assert_matches!(
 			virtual_overseer.recv().await,
-			AllMessages::Provisioner(
-				ProvisionerMessage::ProvisionableData(
-					_,
-					ProvisionableData::BackedCandidate(candidate_receipt)
-				)
-			) => {
-				assert_eq!(candidate_receipt, candidate_a.to_plain());
-			}
+			AllMessages::CollatorProtocol(CollatorProtocolMessage::Backed {
+				para_id: _para_id,
+				para_head,
+			}) if para_id == _para_id && candidate_a_para_head == para_head
 		);
 
 		assert_matches!(
@@ -1180,7 +1177,7 @@ fn concurrent_dependent_candidates() {
 		// Candidate `a` is seconded in a grandparent of the activated `leaf`,
 		// candidate `b` -- in parent.
 		const LEAF_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_DEPTH: BlockNumber = 3;
+		const LEAF_ANCESTRY_LEN: BlockNumber = 3;
 		let para_id = test_state.chain_ids[0];
 
 		let leaf_hash = Hash::from_low_u64_be(130);
@@ -1192,7 +1189,7 @@ fn concurrent_dependent_candidates() {
 			status: LeafStatus::Fresh,
 			span: Arc::new(jaeger::Span::Disabled),
 		};
-		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_DEPTH)];
+		let min_relay_parents = vec![(para_id, LEAF_BLOCK_NUMBER - LEAF_ANCESTRY_LEN)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
 		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
@@ -1369,7 +1366,7 @@ fn concurrent_dependent_candidates() {
 				AllMessages::ProspectiveParachains(
 					ProspectiveParachainsMessage::CandidateBacked(..),
 				) => {},
-				AllMessages::Provisioner(ProvisionerMessage::ProvisionableData(..)) => {},
+				AllMessages::CollatorProtocol(CollatorProtocolMessage::Backed { .. }) => {},
 				AllMessages::StatementDistribution(StatementDistributionMessage::Share(
 					_,
 					statement,
@@ -1410,7 +1407,7 @@ fn seconding_sanity_check_occupy_same_depth() {
 	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
 		// Candidate `a` is seconded in a parent of the activated `leaf`.
 		const LEAF_BLOCK_NUMBER: BlockNumber = 100;
-		const LEAF_DEPTH: BlockNumber = 3;
+		const LEAF_ANCESTRY_LEN: BlockNumber = 3;
 
 		let para_id_a = test_state.chain_ids[0];
 		let para_id_b = test_state.chain_ids[1];
@@ -1425,7 +1422,7 @@ fn seconding_sanity_check_occupy_same_depth() {
 			span: Arc::new(jaeger::Span::Disabled),
 		};
 
-		let min_block_number = LEAF_BLOCK_NUMBER - LEAF_DEPTH;
+		let min_block_number = LEAF_BLOCK_NUMBER - LEAF_ANCESTRY_LEN;
 		let min_relay_parents = vec![(para_id_a, min_block_number), (para_id_b, min_block_number)];
 		let test_leaf_a = TestLeaf { activated, min_relay_parents };
 
@@ -1546,6 +1543,145 @@ fn seconding_sanity_check_occupy_same_depth() {
 				}
 			);
 		}
+
+		virtual_overseer
+	});
+}
+
+// Test that the subsystem doesn't skip occupied cores assignments.
+#[test]
+fn occupied_core_assignment() {
+	let mut test_state = TestState::default();
+	test_harness(test_state.keystore.clone(), |mut virtual_overseer| async move {
+		// Candidate is seconded in a parent of the activated `leaf_a`.
+		const LEAF_A_BLOCK_NUMBER: BlockNumber = 100;
+		const LEAF_A_ANCESTRY_LEN: BlockNumber = 3;
+		let para_id = test_state.chain_ids[0];
+
+		// Set the core state to occupied.
+		let mut candidate_descriptor = ::test_helpers::dummy_candidate_descriptor(Hash::zero());
+		candidate_descriptor.para_id = para_id;
+		test_state.availability_cores[0] = CoreState::Occupied(OccupiedCore {
+			group_responsible: Default::default(),
+			next_up_on_available: None,
+			occupied_since: 100_u32,
+			time_out_at: 200_u32,
+			next_up_on_time_out: None,
+			availability: Default::default(),
+			candidate_descriptor,
+			candidate_hash: Default::default(),
+		});
+
+		let leaf_a_hash = Hash::from_low_u64_be(130);
+		let leaf_a_parent = get_parent_hash(leaf_a_hash);
+		let activated = ActivatedLeaf {
+			hash: leaf_a_hash,
+			number: LEAF_A_BLOCK_NUMBER,
+			status: LeafStatus::Fresh,
+			span: Arc::new(jaeger::Span::Disabled),
+		};
+		let min_relay_parents = vec![(para_id, LEAF_A_BLOCK_NUMBER - LEAF_A_ANCESTRY_LEN)];
+		let test_leaf_a = TestLeaf { activated, min_relay_parents };
+
+		activate_leaf(&mut virtual_overseer, test_leaf_a, &test_state, 0).await;
+
+		let pov = PoV { block_data: BlockData(vec![42, 43, 44]) };
+		let pvd = dummy_pvd();
+		let validation_code = ValidationCode(vec![1, 2, 3]);
+
+		let expected_head_data = test_state.head_data.get(&para_id).unwrap();
+
+		let pov_hash = pov.hash();
+		let candidate = TestCandidateBuilder {
+			para_id,
+			relay_parent: leaf_a_parent,
+			pov_hash,
+			head_data: expected_head_data.clone(),
+			erasure_root: make_erasure_root(&test_state, pov.clone(), pvd.clone()),
+			persisted_validation_data_hash: pvd.hash(),
+			validation_code: validation_code.0.clone(),
+			..Default::default()
+		}
+		.build();
+
+		let second = CandidateBackingMessage::Second(
+			leaf_a_hash,
+			candidate.to_plain(),
+			pvd.clone(),
+			pov.clone(),
+		);
+
+		virtual_overseer.send(FromOrchestra::Communication { msg: second }).await;
+
+		assert_validate_seconded_candidate(
+			&mut virtual_overseer,
+			leaf_a_parent,
+			&candidate,
+			&pov,
+			&pvd,
+			&validation_code,
+			expected_head_data,
+			false,
+		)
+		.await;
+
+		// `seconding_sanity_check`
+		let hypothetical_candidate = HypotheticalCandidate::Complete {
+			candidate_hash: candidate.hash(),
+			receipt: Arc::new(candidate.clone()),
+			persisted_validation_data: pvd.clone(),
+		};
+		let expected_request = vec![(
+			HypotheticalFrontierRequest {
+				candidates: vec![hypothetical_candidate.clone()],
+				fragment_tree_relay_parent: Some(leaf_a_hash),
+			},
+			make_hypothetical_frontier_response(
+				vec![0, 1, 2, 3],
+				hypothetical_candidate,
+				leaf_a_hash,
+			),
+		)];
+		assert_hypothetical_frontier_requests(&mut virtual_overseer, expected_request).await;
+		// Prospective parachains are notified.
+		assert_matches!(
+					virtual_overseer.recv().await,
+					AllMessages::ProspectiveParachains(
+						ProspectiveParachainsMessage::IntroduceCandidate(
+							req,
+							tx,
+						),
+					) if
+						req.candidate_receipt == candidate
+						&& req.candidate_para == para_id
+						&& pvd == req.persisted_validation_data
+		=> {
+						// Any non-empty response will do.
+						tx.send(vec![(leaf_a_hash, vec![0, 2, 3])]).unwrap();
+					}
+				);
+		assert_matches!(
+			virtual_overseer.recv().await,
+			AllMessages::ProspectiveParachains(ProspectiveParachainsMessage::CandidateSeconded(..),)
+		);
+
+		assert_matches!(
+			virtual_overseer.recv().await,
+			AllMessages::StatementDistribution(
+				StatementDistributionMessage::Share(
+					parent_hash,
+					_signed_statement,
+				)
+			) if parent_hash == leaf_a_parent => {}
+		);
+
+		assert_matches!(
+			virtual_overseer.recv().await,
+			AllMessages::CollatorProtocol(CollatorProtocolMessage::Seconded(hash, statement)) => {
+				assert_eq!(leaf_a_parent, hash);
+				assert_matches!(statement.payload(), Statement::Seconded(_));
+			}
+		);
 
 		virtual_overseer
 	});

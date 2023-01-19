@@ -133,9 +133,11 @@ impl PerSessionState {
 			authority_lookup.insert(ad, ValidatorIndex(i as _));
 		}
 
-		let local_validator =
-			polkadot_node_subsystem_util::signing_key_and_index(&session_info.validators, keystore)
-				.await;
+		let local_validator = polkadot_node_subsystem_util::signing_key_and_index(
+			session_info.validators.as_slice(),
+			keystore,
+		)
+		.await;
 
 		PerSessionState {
 			session_info,
@@ -148,7 +150,7 @@ impl PerSessionState {
 
 	fn supply_topology(&mut self, topology: &SessionGridTopology) {
 		let grid_view = grid::build_session_topology(
-			&self.session_info.validator_groups[..],
+			self.session_info.validator_groups.as_slice(),
 			topology,
 			self.local_validator,
 		);
@@ -399,7 +401,7 @@ pub(crate) async fn handle_active_leaves_update<Context>(
 		let local_validator = per_session.local_validator.and_then(|v| {
 			find_local_validator_state(
 				v,
-				&per_session.session_info.validators,
+				per_session.session_info.validators.as_slice(),
 				&per_session.groups,
 				&availability_cores,
 			)
@@ -1046,7 +1048,7 @@ fn handle_cluster_statement(
 	// Ensure the statement is correctly signed.
 	let checked_statement = match check_statement_signature(
 		session,
-		&session_info.validators[..],
+		session_info.validators.as_slice(),
 		relay_parent,
 		statement,
 	) {
@@ -1079,7 +1081,7 @@ fn handle_grid_statement(
 	// Ensure the statement is correctly signed.
 	let checked_statement = match check_statement_signature(
 		session,
-		&per_session.session_info.validators[..],
+		per_session.session_info.validators.as_slice(),
 		relay_parent,
 		statement,
 	) {
